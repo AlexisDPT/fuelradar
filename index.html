@@ -922,7 +922,8 @@ async function fetchAndRender() {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    allStations = data.stations;
+    // L'API retourne `lon`, le frontend utilise `lng` — on normalise
+    allStations = data.stations.map(s => ({ ...s, lng: s.lon ?? s.lng }));
     filteredStations = allStations;
     renderStations();
   } catch(e) {
