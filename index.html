@@ -1,0 +1,1327 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FUEL_RADAR // ASCII MAP v2.6</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap');
+
+  :root {
+    --green: #00ff41;
+    --green-dim: #00aa2a;
+    --green-faint: #003310;
+    --amber: #ffb300;
+    --red: #ff2222;
+    --bg: #020d02;
+    --panel: #040f04;
+    --border: #00ff4133;
+    --text: #00cc33;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--green);
+    font-family: 'Share Tech Mono', monospace;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* CRT scanlines overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* CRT vignette */
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.7) 100%);
+    pointer-events: none;
+    z-index: 9998;
+  }
+
+  /* HEADER */
+  .header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--green);
+    padding: 6px 16px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-shrink: 0;
+    box-shadow: 0 0 20px rgba(0,255,65,0.15);
+  }
+
+  .logo {
+    font-family: 'VT323', monospace;
+    font-size: 26px;
+    color: var(--green);
+    text-shadow: 0 0 10px var(--green), 0 0 20px var(--green-dim);
+    letter-spacing: 2px;
+    white-space: nowrap;
+  }
+
+  .logo span { color: var(--amber); text-shadow: 0 0 10px var(--amber); }
+
+  .header-status {
+    font-size: 11px;
+    color: var(--green-dim);
+    display: flex;
+    gap: 16px;
+    flex: 1;
+  }
+
+  .blink { animation: blink 1.2s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .status-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; box-shadow: 0 0 6px var(--green); }
+    50% { opacity: 0.5; box-shadow: 0 0 2px var(--green); }
+  }
+
+  .header-clock {
+    font-size: 13px;
+    color: var(--amber);
+    text-shadow: 0 0 8px var(--amber);
+    margin-left: auto;
+  }
+
+  /* MAIN LAYOUT */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* SIDEBAR */
+  .sidebar {
+    width: 310px;
+    flex-shrink: 0;
+    background: var(--panel);
+    border-right: 1px solid var(--green);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 4px 0 20px rgba(0,255,65,0.05);
+  }
+
+  .panel-title {
+    font-family: 'VT323', monospace;
+    font-size: 16px;
+    color: var(--green);
+    text-shadow: 0 0 8px var(--green-dim);
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,255,65,0.03);
+    letter-spacing: 1px;
+  }
+
+  /* SEARCH */
+  .search-box {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .input-row {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--green-dim);
+    background: rgba(0,255,65,0.04);
+    padding: 4px 8px;
+    gap: 6px;
+  }
+
+  .input-row:focus-within {
+    border-color: var(--green);
+    box-shadow: 0 0 8px rgba(0,255,65,0.2);
+  }
+
+  .input-row span { color: var(--green-dim); font-size: 12px; }
+
+  .input-row input {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--green);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    flex: 1;
+  }
+
+  .input-row input::placeholder { color: var(--green-faint); }
+
+  /* FUEL TYPE SELECTOR */
+  .fuel-selector {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .fuel-btn {
+    background: transparent;
+    border: 1px solid var(--green-dim);
+    color: var(--green-dim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    padding: 3px 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 1px;
+  }
+
+  .fuel-btn:hover, .fuel-btn.active {
+    background: rgba(0,255,65,0.12);
+    border-color: var(--green);
+    color: var(--green);
+    text-shadow: 0 0 6px var(--green);
+    box-shadow: 0 0 8px rgba(0,255,65,0.15);
+  }
+
+  /* LOCATE BUTTON */
+  .locate-btn {
+    margin: 0 12px 10px;
+    background: transparent;
+    border: 1px solid var(--green);
+    color: var(--green);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    padding: 7px 12px;
+    cursor: pointer;
+    width: calc(100% - 24px);
+    transition: all 0.2s;
+    text-align: left;
+    letter-spacing: 1px;
+    text-shadow: 0 0 6px var(--green-dim);
+  }
+
+  .locate-btn:hover {
+    background: rgba(0,255,65,0.1);
+    box-shadow: 0 0 12px rgba(0,255,65,0.2);
+  }
+
+  .locate-btn:active { transform: scale(0.98); }
+
+  /* STATIONS LIST */
+  .stations-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+
+  .stations-list::-webkit-scrollbar { width: 4px; }
+  .stations-list::-webkit-scrollbar-track { background: var(--bg); }
+  .stations-list::-webkit-scrollbar-thumb { background: var(--green-dim); }
+
+  .station-card {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(0,255,65,0.08);
+    cursor: pointer;
+    transition: background 0.1s;
+    position: relative;
+  }
+
+  .station-card:hover { background: rgba(0,255,65,0.06); }
+  .station-card.active { background: rgba(0,255,65,0.1); border-left: 2px solid var(--green); }
+
+  .station-name {
+    font-size: 12px;
+    color: var(--green);
+    text-shadow: 0 0 4px rgba(0,255,65,0.3);
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .station-addr {
+    font-size: 10px;
+    color: var(--green-dim);
+    margin-bottom: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .station-prices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .price-tag {
+    font-size: 10px;
+    padding: 2px 5px;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+
+  .price-tag.cheap { border-color: #00ff41; color: #00ff41; }
+  .price-tag.mid   { border-color: #ffb300; color: #ffb300; }
+  .price-tag.exp   { border-color: #ff4444; color: #ff4444; }
+
+  .station-dist {
+    position: absolute;
+    top: 8px; right: 10px;
+    font-size: 10px;
+    color: var(--green-dim);
+  }
+
+  .no-data {
+    padding: 20px 12px;
+    color: var(--green-dim);
+    font-size: 11px;
+    text-align: center;
+    line-height: 1.8;
+  }
+
+  /* STATS PANEL */
+  .stats-panel {
+    border-top: 1px solid var(--border);
+    padding: 8px 12px;
+    background: rgba(0,0,0,0.3);
+    font-size: 10px;
+    color: var(--green-dim);
+    flex-shrink: 0;
+  }
+
+  .stats-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 2px;
+  }
+
+  .stats-val { color: var(--green); }
+
+  /* MAP */
+  .map-container {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #map {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* ASCII overlay on map */
+  .map-overlay-text {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: rgba(2,13,2,0.88);
+    border: 1px solid var(--green);
+    padding: 8px 12px;
+    font-size: 11px;
+    color: var(--green-dim);
+    pointer-events: none;
+    z-index: 1000;
+    box-shadow: 0 0 12px rgba(0,255,65,0.1);
+  }
+
+  .map-overlay-text .ov-title {
+    color: var(--green);
+    font-family: 'VT323', monospace;
+    font-size: 15px;
+    margin-bottom: 4px;
+  }
+
+  /* Loading screen */
+  #loading {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 99999;
+    font-family: 'VT323', monospace;
+    color: var(--green);
+    text-shadow: 0 0 10px var(--green-dim);
+  }
+
+  .loading-art {
+    font-size: 12px;
+    line-height: 1.3;
+    color: var(--green-dim);
+    margin-bottom: 20px;
+    text-align: center;
+  }
+
+  .loading-title {
+    font-size: 36px;
+    letter-spacing: 4px;
+    margin-bottom: 8px;
+    text-shadow: 0 0 20px var(--green), 0 0 40px var(--green-dim);
+  }
+
+  .loading-sub {
+    font-size: 16px;
+    color: var(--green-dim);
+    margin-bottom: 30px;
+    letter-spacing: 2px;
+  }
+
+  .loading-bar-wrap {
+    width: 300px;
+    border: 1px solid var(--green-dim);
+    padding: 3px;
+    margin-bottom: 12px;
+  }
+
+  .loading-bar {
+    height: 12px;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+
+  .loading-log {
+    font-size: 13px;
+    color: var(--green-dim);
+    height: 60px;
+    overflow: hidden;
+    width: 400px;
+    text-align: left;
+  }
+
+  /* Leaflet popup override */
+  .leaflet-popup-content-wrapper {
+    background: var(--panel) !important;
+    border: 1px solid var(--green) !important;
+    border-radius: 0 !important;
+    box-shadow: 0 0 15px rgba(0,255,65,0.3) !important;
+    color: var(--green) !important;
+    font-family: 'Share Tech Mono', monospace !important;
+  }
+
+  .leaflet-popup-tip { background: var(--green) !important; }
+  .leaflet-popup-close-button { color: var(--green) !important; }
+
+  .popup-title {
+    font-family: 'VT323', monospace;
+    font-size: 18px;
+    color: var(--green);
+    text-shadow: 0 0 6px var(--green-dim);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 4px;
+    margin-bottom: 6px;
+  }
+
+  .popup-addr { font-size: 10px; color: var(--green-dim); margin-bottom: 8px; }
+
+  .popup-prices { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+
+  .popup-price {
+    font-size: 11px;
+    padding: 2px 6px;
+    border: 1px solid var(--green-dim);
+    color: var(--green);
+  }
+
+  .popup-price strong { color: var(--amber); text-shadow: 0 0 4px rgba(255,179,0,0.5); }
+
+  .popup-updated { font-size: 9px; color: var(--green-faint); margin-top: 4px; }
+
+  /* Radius indicator */
+  .leaflet-interactive.radius-circle {
+    stroke: #00ff41 !important;
+    stroke-dasharray: 5,3 !important;
+    fill: rgba(0,255,65,0.04) !important;
+  }
+
+  /* ── CHART MODAL ── */
+  #chartModal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.92);
+    z-index: 99990;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  #chartModal.open { display: flex; }
+
+  .chart-box {
+    background: var(--panel);
+    border: 1px solid var(--green);
+    box-shadow: 0 0 30px rgba(0,255,65,0.2);
+    width: 100%;
+    max-width: 900px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .chart-title {
+    font-family: 'VT323', monospace;
+    font-size: 18px;
+    color: var(--green);
+    text-shadow: 0 0 8px var(--green-dim);
+  }
+
+  .chart-close {
+    background: transparent;
+    border: 1px solid var(--green-dim);
+    color: var(--green);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    padding: 3px 8px;
+    cursor: pointer;
+  }
+  .chart-close:hover { background: rgba(0,255,65,0.1); border-color: var(--green); }
+
+  .chart-fuel-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+
+  .chart-tab {
+    background: transparent;
+    border: 1px solid var(--green-dim);
+    color: var(--green-dim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    padding: 2px 8px;
+    cursor: pointer;
+    transition: all 0.1s;
+  }
+  .chart-tab.active, .chart-tab:hover {
+    border-color: var(--green);
+    color: var(--green);
+    background: rgba(0,255,65,0.1);
+    text-shadow: 0 0 4px var(--green);
+  }
+
+  .chart-body {
+    flex: 1;
+    padding: 14px;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .chart-status {
+    font-size: 11px;
+    color: var(--green-dim);
+    margin-bottom: 10px;
+    min-height: 16px;
+  }
+
+  /* SVG chart */
+  #chartSvg {
+    width: 100%;
+    overflow: visible;
+  }
+
+  .chart-no-data {
+    color: var(--green-dim);
+    font-size: 11px;
+    text-align: center;
+    padding: 30px 0;
+    line-height: 2;
+  }
+
+  .popup-chart-btn {
+    margin-top: 6px;
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--green-dim);
+    color: var(--green-dim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    padding: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .popup-chart-btn:hover {
+    border-color: var(--green);
+    color: var(--green);
+    background: rgba(0,255,65,0.08);
+  }
+</style>
+</head>
+<body>
+
+<!-- LOADING SCREEN -->
+<div id="loading">
+  <pre class="loading-art">
+ ___  ___  ___  _     
+| __|| | || __|| |    
+| _| | u || _| | |__  
+|_|  |___||___||____|
+  RADAR v2.6 INIT
+  </pre>
+  <div class="loading-title">FUEL_RADAR</div>
+  <div class="loading-sub">>> SYSTÈME DE SURVEILLANCE CARBURANT <<</div>
+  <div class="loading-bar-wrap"><div class="loading-bar" id="loadingBar"></div></div>
+  <div class="loading-log" id="loadingLog"></div>
+</div>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="logo">⛽ FUEL_<span>RADAR</span></div>
+  <div class="header-status">
+    <span><span class="status-dot"></span> SYS_ONLINE</span>
+    <span id="hdrCount">STATIONS: ---</span>
+    <span id="hdrRadius">RAYON: 5km</span>
+    <span id="hdrFuel">CARBURANT: SP95</span>
+  </div>
+  <button onclick="openChartModal()" style="
+    background:transparent; border:1px solid var(--green-dim); color:var(--green-dim);
+    font-family:'Share Tech Mono',monospace; font-size:10px; padding:3px 10px; cursor:pointer;
+    transition:all 0.15s; white-space:nowrap;
+  " onmouseover="this.style.borderColor='var(--green)';this.style.color='var(--green)'"
+     onmouseout="this.style.borderColor='var(--green-dim)';this.style.color='var(--green-dim)'">
+    ► GRAPHIQUE 30J
+  </button>
+  <div class="header-clock" id="clock">__:__:__</div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="panel-title">[ CONSOLE ] ──────────────</div>
+
+    <!-- Search -->
+    <div class="search-box">
+      <div class="input-row">
+        <span>$</span>
+        <input type="text" id="searchInput" placeholder="ville, code postal...">
+      </div>
+    </div>
+
+    <!-- Fuel type -->
+    <div class="fuel-selector">
+      <button class="fuel-btn active" data-fuel="SP95">SP95</button>
+      <button class="fuel-btn" data-fuel="SP98">SP98</button>
+      <button class="fuel-btn" data-fuel="Gazole">GAZOLE</button>
+      <button class="fuel-btn" data-fuel="E10">E10</button>
+      <button class="fuel-btn" data-fuel="E85">E85</button>
+      <button class="fuel-btn" data-fuel="GPLc">GPL</button>
+    </div>
+
+    <!-- Radius -->
+    <div class="fuel-selector" style="border-bottom:1px solid var(--border); padding-bottom:10px;">
+      <button class="fuel-btn active" data-radius="3" style="background:rgba(0,255,65,0.05)">3km</button>
+      <button class="fuel-btn" data-radius="5">5km</button>
+      <button class="fuel-btn" data-radius="10">10km</button>
+      <button class="fuel-btn" data-radius="20">20km</button>
+      <button class="fuel-btn" data-radius="50">50km</button>
+    </div>
+
+    <button class="locate-btn" id="locateBtn">
+      ► LOCALISER MA POSITION [GPS]
+    </button>
+
+    <div class="panel-title">[ STATIONS DÉTECTÉES ] ──────</div>
+
+    <div class="stations-list" id="stationsList">
+      <div class="no-data">
+        ┌──────────────────────┐<br>
+        │  EN ATTENTE GPS...   │<br>
+        │  Cliquer sur         │<br>
+        │  LOCALISER pour      │<br>
+        │  scanner la zone     │<br>
+        └──────────────────────┘
+      </div>
+    </div>
+
+    <div class="stats-panel" id="statsPanel">
+      <div class="stats-row"><span>STATIONS SCANNÉES</span><span class="stats-val" id="statCount">---</span></div>
+      <div class="stats-row"><span>PRIX MIN</span><span class="stats-val" id="statMin">---</span></div>
+      <div class="stats-row"><span>PRIX MAX</span><span class="stats-val" id="statMax">---</span></div>
+      <div class="stats-row"><span>PRIX MOY</span><span class="stats-val" id="statAvg">---</span></div>
+    </div>
+  </div>
+
+  <!-- MAP -->
+  <div class="map-container">
+    <div id="map"></div>
+    <div class="map-overlay-text">
+      <div class="ov-title">[ LÉGENDE ]</div>
+      <div>🟢 ─ PRIX BAS</div>
+      <div>🟡 ─ PRIX MOYEN</div>
+      <div>🔴 ─ PRIX ÉLEVÉ</div>
+      <div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">
+        SRC: data.gouv.fr<br>
+        MÀJ: temps réel
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CHART MODAL -->
+<div id="chartModal">
+  <div class="chart-box">
+    <div class="chart-header">
+      <div class="chart-title" id="chartModalTitle">[ ÉVOLUTION PRIX — TOUTES STATIONS ]</div>
+      <button class="chart-close" onclick="closeChartModal()">[X] FERMER</button>
+    </div>
+    <div class="chart-fuel-tabs" id="chartFuelTabs"></div>
+    <div class="chart-body">
+      <div class="chart-status" id="chartStatus">EN ATTENTE...</div>
+      <div id="chartLegend" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;font-size:9px;"></div>
+      <div id="chartContent"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ──────────────────────────────────────────────
+// INIT & LOADING
+// ──────────────────────────────────────────────
+const logs = [
+  ">> CHARGEMENT DES MODULES...",
+  ">> CONNEXION API data.gouv.fr...",
+  ">> CALIBRATION DU RADAR GPS...",
+  ">> INITIALISATION CARTOGRAPHIQUE...",
+  ">> COMPILATION DES INDICES PRIX...",
+  ">> SYSTÈME PRÊT."
+];
+
+let logIdx = 0;
+const logEl = document.getElementById('loadingLog');
+const barEl = document.getElementById('loadingBar');
+
+function runLoadingSeq(cb) {
+  function next() {
+    if (logIdx < logs.length) {
+      logEl.innerHTML += logs[logIdx] + '<br>';
+      barEl.style.width = ((logIdx + 1) / logs.length * 100) + '%';
+      logIdx++;
+      setTimeout(next, 280 + Math.random() * 200);
+    } else {
+      setTimeout(cb, 300);
+    }
+  }
+  next();
+}
+
+runLoadingSeq(() => {
+  document.getElementById('loading').style.display = 'none';
+  initApp();
+});
+
+// ──────────────────────────────────────────────
+// CLOCK
+// ──────────────────────────────────────────────
+function updateClock() {
+  const n = new Date();
+  document.getElementById('clock').textContent =
+    [n.getHours(), n.getMinutes(), n.getSeconds()]
+      .map(x => String(x).padStart(2,'0')).join(':');
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ──────────────────────────────────────────────
+// STATE
+// ──────────────────────────────────────────────
+let map, userMarker, radiusCircle;
+let userPos = null;
+let allStations = [];
+let filteredStations = [];
+let activeMarkers = [];
+let selectedFuel = 'SP95';
+let selectedRadius = 3;
+let activeCard = null;
+
+// ──────────────────────────────────────────────
+// MAP INIT
+// ──────────────────────────────────────────────
+function initApp() {
+  map = L.map('map', { zoomControl: false }).setView([46.6, 2.3], 6);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© OpenStreetMap © CARTO',
+    subdomains: 'abcd',
+    maxZoom: 19
+  }).addTo(map);
+
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+  // Fuel buttons
+  document.querySelectorAll('.fuel-btn[data-fuel]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.fuel-btn[data-fuel]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedFuel = btn.dataset.fuel;
+      document.getElementById('hdrFuel').textContent = 'CARBURANT: ' + selectedFuel;
+      if (filteredStations.length) renderStations();
+    });
+  });
+
+  // Radius buttons
+  document.querySelectorAll('.fuel-btn[data-radius]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.fuel-btn[data-radius]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedRadius = parseInt(btn.dataset.radius);
+      document.getElementById('hdrRadius').textContent = 'RAYON: ' + selectedRadius + 'km';
+      if (userPos) fetchAndRender();
+    });
+  });
+
+  // Locate
+  document.getElementById('locateBtn').addEventListener('click', locateUser);
+
+  // Search
+  let searchTimeout;
+  document.getElementById('searchInput').addEventListener('input', e => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => searchCity(e.target.value), 600);
+  });
+
+  // Auto-locate on load
+  locateUser();
+}
+
+// ──────────────────────────────────────────────
+// GEOLOCATION
+// ──────────────────────────────────────────────
+function locateUser() {
+  const btn = document.getElementById('locateBtn');
+  btn.textContent = '► ACQUISITION GPS EN COURS...';
+  btn.disabled = true;
+
+  if (!navigator.geolocation) {
+    alert('Géolocalisation non supportée.');
+    btn.textContent = '► LOCALISER MA POSITION [GPS]';
+    btn.disabled = false;
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      btn.textContent = '► POSITION ACQUISE ✓';
+      btn.disabled = false;
+      setTimeout(() => { btn.textContent = '► RE-LOCALISER [GPS]'; }, 2000);
+
+      placeUserMarker();
+      map.setView([userPos.lat, userPos.lng], 13);
+      fetchAndRender();
+    },
+    err => {
+      btn.textContent = '► ERREUR GPS – RÉESSAYER';
+      btn.disabled = false;
+      // Default to Paris if geolocation fails
+      userPos = { lat: 48.8566, lng: 2.3522 };
+      placeUserMarker();
+      map.setView([userPos.lat, userPos.lng], 13);
+      fetchAndRender();
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+function placeUserMarker() {
+  const userIcon = L.divIcon({
+    html: `<div style="
+      font-family:'Share Tech Mono',monospace;
+      font-size:10px;
+      color:#00ff41;
+      text-shadow:0 0 6px #00ff41;
+      text-align:center;
+      line-height:1.2;
+    ">[YOU]<br>◉</div>`,
+    className: '',
+    iconSize: [40, 30],
+    iconAnchor: [20, 15]
+  });
+
+  if (userMarker) map.removeLayer(userMarker);
+  userMarker = L.marker([userPos.lat, userPos.lng], { icon: userIcon, zIndexOffset: 1000 }).addTo(map);
+
+  if (radiusCircle) map.removeLayer(radiusCircle);
+  radiusCircle = L.circle([userPos.lat, userPos.lng], {
+    radius: selectedRadius * 1000,
+    color: '#00ff41',
+    fillColor: '#00ff41',
+    fillOpacity: 0.04,
+    dashArray: '6,4',
+    weight: 1
+  }).addTo(map);
+}
+
+// ──────────────────────────────────────────────
+// DATA FETCH — appel uniquement notre propre API
+// Données pré-calculées côté serveur → réponse <100ms
+// ──────────────────────────────────────────────
+
+// En prod : URL relative (/api/...) car frontend servi par le même serveur
+// En dev local : pointe vers localhost:8000
+const API_BASE = "/api";
+
+async function fetchAndRender() {
+  if (!userPos) return;
+
+  if (radiusCircle) map.removeLayer(radiusCircle);
+  radiusCircle = L.circle([userPos.lat, userPos.lng], {
+    radius: selectedRadius * 1000,
+    color: '#00ff41', fillColor: '#00ff41',
+    fillOpacity: 0.04, dashArray: '6,4', weight: 1
+  }).addTo(map);
+
+  document.getElementById('stationsList').innerHTML = `
+    <div class="no-data">
+      ┌──────────────────────┐<br>
+      │  CHARGEMENT...       │<br>
+      └──────────────────────┘
+    </div>`;
+
+  try {
+    const url = `${API_BASE}/stations?lat=${userPos.lat}&lng=${userPos.lng}&radius=${selectedRadius}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    allStations = data.stations;
+    filteredStations = allStations;
+    renderStations();
+  } catch(e) {
+    console.error('Fetch échoué :', e);
+    document.getElementById('stationsList').innerHTML = `
+      <div class="no-data">
+        [ERREUR_RÉSEAU]<br><br>
+        Impossible de joindre<br>
+        le serveur.<br><br>
+        ${e.message}
+      </div>`;
+  }
+}
+
+// ──────────────────────────────────────────────
+// RENDER
+// ──────────────────────────────────────────────
+function renderStations() {
+  // Clear old markers
+  activeMarkers.forEach(m => map.removeLayer(m));
+  activeMarkers = [];
+
+  const stationsWithFuel = filteredStations
+    .filter(s => s.prices[selectedFuel])
+    .sort((a, b) => a.prices[selectedFuel].prix - b.prices[selectedFuel].prix);
+
+  document.getElementById('hdrCount').textContent = 'STATIONS: ' + stationsWithFuel.length;
+  document.getElementById('statCount').textContent = stationsWithFuel.length;
+
+  if (!stationsWithFuel.length) {
+    document.getElementById('stationsList').innerHTML = `
+      <div class="no-data">
+        [AUCUNE STATION]<br><br>
+        Aucune station ne propose<br>
+        du ${selectedFuel} dans<br>
+        un rayon de ${selectedRadius}km.<br><br>
+        Augmentez le rayon ou<br>
+        changez de carburant.
+      </div>`;
+    resetStats();
+    return;
+  }
+
+  // Price range for coloring
+  const prices = stationsWithFuel.map(s => s.prices[selectedFuel].prix);
+  const minPrice = Math.min(...prices);
+  const maxPrice = Math.max(...prices);
+  const avgPrice = prices.reduce((a,b) => a+b, 0) / prices.length;
+
+  document.getElementById('statMin').textContent = minPrice.toFixed(3) + ' €/L';
+  document.getElementById('statMax').textContent = maxPrice.toFixed(3) + ' €/L';
+  document.getElementById('statAvg').textContent = avgPrice.toFixed(3) + ' €/L';
+
+  // Render sidebar
+  const list = document.getElementById('stationsList');
+  list.innerHTML = '';
+
+  stationsWithFuel.forEach((station, i) => {
+    const p = station.prices[selectedFuel].prix;
+    const range = maxPrice - minPrice;
+    const ratio = range > 0 ? (p - minPrice) / range : 0;
+    let tier = ratio < 0.33 ? 'cheap' : ratio < 0.66 ? 'mid' : 'exp';
+
+    const card = document.createElement('div');
+    card.className = 'station-card';
+    card.dataset.id = station.id;
+
+    const otherPrices = Object.entries(station.prices)
+      .filter(([k]) => k !== selectedFuel)
+      .slice(0, 2)
+      .map(([k, v]) => `<span class="price-tag mid">${k}: ${v.prix.toFixed(3)}</span>`)
+      .join('');
+
+    card.innerHTML = `
+      <div class="station-name">
+        <span style="color:${tier==='cheap'?'var(--green)':tier==='mid'?'var(--amber)':'var(--red)'};margin-right:4px;">#${String(i+1).padStart(2,'0')}</span>
+        ${station.name}
+      </div>
+      <div class="station-addr">${station.address}</div>
+      <div class="station-prices">
+        <span class="price-tag ${tier}" style="font-size:12px;padding:2px 8px;">${selectedFuel}: ${p.toFixed(3)} €/L</span>
+        ${otherPrices}
+      </div>
+      ${station.dist != null ? `<div class="station-dist">${station.dist < 1 ? (station.dist * 1000).toFixed(0) + 'm' : station.dist.toFixed(1) + 'km'}</div>` : ''}
+    `;
+
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.station-card.active').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+      map.setView([station.lat, station.lng], 15);
+      openPopup(station, minPrice, maxPrice);
+    });
+
+    list.appendChild(card);
+
+    // Map marker
+    const ratio2 = range > 0 ? (p - minPrice) / range : 0;
+    const color = ratio2 < 0.33 ? '#00ff41' : ratio2 < 0.66 ? '#ffb300' : '#ff4444';
+    const symbol = ratio2 < 0.33 ? '▼' : ratio2 < 0.66 ? '●' : '▲';
+
+    const icon = L.divIcon({
+      html: `<div style="
+        font-family:'Share Tech Mono',monospace;
+        font-size:9px;
+        color:${color};
+        text-shadow:0 0 5px ${color};
+        text-align:center;
+        line-height:1.3;
+        white-space:nowrap;
+        background:rgba(2,13,2,0.85);
+        border:1px solid ${color}33;
+        padding:2px 4px;
+        cursor:pointer;
+      ">${symbol} ${p.toFixed(3)}</div>`,
+      className: '',
+      iconSize: [60, 22],
+      iconAnchor: [30, 11]
+    });
+
+    const marker = L.marker([station.lat, station.lng], { icon })
+      .addTo(map)
+      .on('click', () => {
+        document.querySelectorAll('.station-card').forEach(c => c.classList.remove('active'));
+        const cardEl = document.querySelector(`[data-id="${station.id}"]`);
+        if (cardEl) {
+          cardEl.classList.add('active');
+          cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        openPopup(station, minPrice, maxPrice);
+      });
+
+    activeMarkers.push(marker);
+  });
+}
+
+function openPopup(station, minPrice, maxPrice) {
+  const fuelData = station.prices[selectedFuel];
+  const p = fuelData ? fuelData.prix : null;
+  const range = maxPrice - minPrice;
+  const ratio = p && range > 0 ? (p - minPrice) / range : 0;
+  const tier = ratio < 0.33 ? 'ÉCONOMIQUE' : ratio < 0.66 ? 'MOYEN' : 'ÉLEVÉ';
+  const tierColor = ratio < 0.33 ? '#00ff41' : ratio < 0.66 ? '#ffb300' : '#ff4444';
+
+  const allPricesHtml = Object.entries(station.prices)
+    .map(([fuel, v]) => `<span class="popup-price">${fuel}: <strong>${v.prix.toFixed(3)}</strong> €/L</span>`)
+    .join('');
+
+  const distStr = station.dist != null
+    ? (station.dist < 1 ? (station.dist * 1000).toFixed(0) + ' m' : station.dist.toFixed(1) + ' km')
+    : '?';
+
+  const servicesHtml = station.services?.length
+    ? `<div class="popup-updated" style="margin-top:5px;border-top:1px solid var(--border);padding-top:4px;">SERVICES: ${station.services.slice(0,5).join(' · ')}</div>`
+    : '';
+
+  const popup = L.popup({ maxWidth: 260, className: '' })
+  .setLatLng([station.lat, station.lng])
+  .setContent(`
+    <div class="popup-title">⛽ ${station.name}</div>
+    <div class="popup-addr">📍 ${station.address}${station.city ? ', ' + station.city : ''}</div>
+    <div class="popup-addr">DISTANCE: ${distStr}</div>
+    ${p ? `<div style="font-size:11px;color:${tierColor};margin-bottom:6px;text-shadow:0 0 4px ${tierColor};">INDICE PRIX: ${tier} (${p.toFixed(3)} €/L)</div>` : ''}
+    <div class="popup-prices">${allPricesHtml}</div>
+    ${fuelData?.maj ? `<div class="popup-updated">MÀJ: ${new Date(fuelData.maj).toLocaleString('fr-FR')}</div>` : ''}
+    ${servicesHtml}
+  `)
+  .openOn(map);
+}
+
+function resetStats() {
+  ['statMin','statMax','statAvg'].forEach(id => {
+    document.getElementById(id).textContent = '---';
+  });
+}
+
+// ──────────────────────────────────────────────
+// CITY SEARCH
+// ──────────────────────────────────────────────
+async function searchCity(q) {
+  if (q.length < 2) return;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q+', France')}&format=json&limit=1`;
+    const res = await fetch(url, { headers: { 'Accept-Language': 'fr' } });
+    const data = await res.json();
+    if (data.length) {
+      userPos = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      placeUserMarker();
+      map.setView([userPos.lat, userPos.lng], 13);
+      fetchAndRender();
+    }
+  } catch(e) { console.error(e); }
+}
+
+// ──────────────────────────────────────────────
+// UTILS
+// ──────────────────────────────────────────────
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 +
+            Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
+            Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ──────────────────────────────────────────────
+// CHART MODAL — Historique 30j depuis notre API
+// /api/history?ids=...&fuel=...&days=30
+// ──────────────────────────────────────────────
+
+const STATION_COLORS = [
+  '#00ff41','#ffb300','#ff4444','#00ccff','#ff66ff',
+  '#44ffdd','#ff8800','#aaffaa','#ff99cc','#88ccff',
+  '#ffff44','#cc44ff','#44ff88','#ff6644','#00ffcc'
+];
+
+let chartActiveFuel = null;
+
+function openChartModal() {
+  if (!filteredStations.length) return;
+  document.getElementById('chartModal').classList.add('open');
+
+  const fuelsSet = new Set();
+  filteredStations.forEach(s => Object.keys(s.prices).forEach(f => fuelsSet.add(f)));
+  const fuels = Array.from(fuelsSet);
+  chartActiveFuel = fuels.includes(selectedFuel) ? selectedFuel : fuels[0];
+
+  document.getElementById('chartFuelTabs').innerHTML = fuels.map(f =>
+    `<button class="chart-tab${f===chartActiveFuel?' active':''}" data-fuel="${f}"
+       onclick="switchChartFuel('${f}')">${f}</button>`
+  ).join('');
+
+  loadChartHistory(chartActiveFuel);
+}
+
+function closeChartModal() {
+  document.getElementById('chartModal').classList.remove('open');
+  document.getElementById('chartContent').innerHTML = '';
+  document.getElementById('chartLegend').innerHTML = '';
+}
+
+function switchChartFuel(fuel) {
+  chartActiveFuel = fuel;
+  document.querySelectorAll('.chart-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.fuel === fuel)
+  );
+  loadChartHistory(fuel);
+}
+
+async function loadChartHistory(fuel) {
+  const statusEl  = document.getElementById('chartStatus');
+  const contentEl = document.getElementById('chartContent');
+  const legendEl  = document.getElementById('chartLegend');
+
+  const stations = filteredStations
+    .filter(s => s.prices[fuel])
+    .sort((a,b) => a.prices[fuel].prix - b.prices[fuel].prix)
+    .slice(0, 15);
+
+  if (!stations.length) {
+    statusEl.textContent = `AUCUNE STATION NE PROPOSE DU ${fuel}`;
+    contentEl.innerHTML = `<div class="chart-no-data">[AUCUNE DONNÉE]</div>`;
+    legendEl.innerHTML = '';
+    return;
+  }
+
+  statusEl.textContent = 'CHARGEMENT HISTORIQUE...';
+  contentEl.innerHTML = `<div class="chart-no-data"><span class="blink">█</span></div>`;
+  legendEl.innerHTML = '';
+
+  let history = {};
+  try {
+    const ids = stations.map(s => s.id).join(',');
+    const res = await fetch(`${API_BASE}/history?ids=${ids}&fuel=${fuel}&days=30`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    history = data.history || {};
+  } catch(e) {
+    statusEl.textContent = 'ERREUR CHARGEMENT HISTORIQUE';
+    contentEl.innerHTML = `<div class="chart-no-data">[ERREUR] ${e.message}</div>`;
+    return;
+  }
+
+  // Collecte toutes les dates (historique + aujourd'hui)
+  const today = new Date().toISOString().slice(0,10);
+  const allDaysSet = new Set([today]);
+  Object.values(history).forEach(h => Object.keys(h).forEach(d => allDaysSet.add(d)));
+  const allDays = [...allDaysSet].sort();
+
+  const series = stations.map((s, i) => {
+    const rec = history[s.id] || {};
+    const pts = allDays.map(day => {
+      if (rec[day] != null) return { day, v: rec[day] };
+      if (day === today && s.prices[fuel]) return { day, v: s.prices[fuel].prix };
+      return null;
+    }).filter(Boolean);
+    return {
+      name: s.name,
+      currentPrice: s.prices[fuel].prix,
+      color: STATION_COLORS[i % STATION_COLORS.length],
+      pts
+    };
+  }).filter(s => s.pts.length >= 1);
+
+  const allVals = series.flatMap(s => s.pts.map(p => p.v));
+  const globalMin = Math.min(...allVals);
+  const globalMax = Math.max(...allVals);
+  const nDays = allDays.length;
+
+  statusEl.textContent = `${series.length} STATIONS · ${fuel} · ${nDays}J · MIN:${globalMin.toFixed(3)} · MAX:${globalMax.toFixed(3)} €/L`;
+
+  legendEl.innerHTML = series.map(s =>
+    `<span style="color:${s.color};border:1px solid ${s.color}33;padding:1px 6px;font-size:9px;white-space:nowrap;">
+      ─ ${s.name} (${s.currentPrice.toFixed(3)}€)
+    </span>`
+  ).join('');
+
+  contentEl.innerHTML = renderMultiLineSVG(series, allDays, fuel, globalMin, globalMax);
+}
+
+function renderMultiLineSVG(series, allDays, fuel, globalMin, globalMax) {
+  const W = 820, H = 280;
+  const PAD = { top: 20, right: 18, bottom: 46, left: 58 };
+  const cW = W - PAD.left - PAD.right;
+  const cH = H - PAD.top - PAD.bottom;
+  const range = globalMax - globalMin || 0.01;
+  const n = allDays.length;
+
+  const xOf = day => PAD.left + (allDays.indexOf(day) / Math.max(n-1,1)) * cW;
+  const yOf = v   => PAD.top + cH - ((v - globalMin) / range) * cH;
+
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(t => ({
+    y: PAD.top + cH - t*cH, v: globalMin + t*range
+  }));
+  const yGrid = yTicks.map(l => `
+    <line x1="${PAD.left}" y1="${l.y.toFixed(1)}" x2="${PAD.left+cW}" y2="${l.y.toFixed(1)}"
+      stroke="#00ff4112" stroke-width="1" stroke-dasharray="3,3"/>
+    <text x="${PAD.left-5}" y="${(l.y+3.5).toFixed(1)}" text-anchor="end"
+      font-family="Share Tech Mono,monospace" font-size="9" fill="#008822bb">${l.v.toFixed(3)}</text>
+  `).join('');
+
+  const step = Math.max(1, Math.floor(n / 7));
+  const xLabels = allDays.filter((_,i) => i % step === 0 || i === n-1).map(d => {
+    const x = xOf(d);
+    return `
+      <line x1="${x.toFixed(1)}" y1="${PAD.top}" x2="${x.toFixed(1)}" y2="${PAD.top+cH}"
+        stroke="#00ff4108" stroke-width="1"/>
+      <text x="${x.toFixed(1)}" y="${(PAD.top+cH+13).toFixed(1)}" text-anchor="middle"
+        font-family="Share Tech Mono,monospace" font-size="8" fill="#008822cc"
+        transform="rotate(-40,${x.toFixed(1)},${(PAD.top+cH+13).toFixed(1)})">${d.slice(5)}</text>`;
+  }).join('');
+
+  const curves = series.map(s => {
+    if (!s.pts.length) return '';
+    const path = s.pts.map((p,i) =>
+      `${i===0?'M':'L'}${xOf(p.day).toFixed(1)},${yOf(p.v).toFixed(1)}`
+    ).join(' ');
+    const last = s.pts[s.pts.length-1];
+    return `
+      <path d="${path}" fill="none" stroke="${s.color}" stroke-width="1.8" opacity="0.9"
+        style="filter:drop-shadow(0 0 2px ${s.color}88)"/>
+      <circle cx="${xOf(s.pts[0].day).toFixed(1)}" cy="${yOf(s.pts[0].v).toFixed(1)}"
+        r="2.5" fill="${s.color}" opacity="0.5"/>
+      <circle cx="${xOf(last.day).toFixed(1)}" cy="${yOf(last.v).toFixed(1)}"
+        r="3.5" fill="${s.color}" style="filter:drop-shadow(0 0 5px ${s.color})">
+        <title>${s.name} — ${last.v.toFixed(3)} €/L</title>
+      </circle>
+      <text x="${(xOf(last.day)+6).toFixed(1)}" y="${(yOf(last.v)+4).toFixed(1)}"
+        font-family="VT323,monospace" font-size="12" fill="${s.color}"
+        style="text-shadow:0 0 3px ${s.color}">${last.v.toFixed(3)}</text>`;
+  }).join('');
+
+  const minY = yOf(globalMin);
+  return `
+  <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;overflow:visible">
+    <rect width="${W}" height="${H}" fill="transparent"/>
+    <line x1="${PAD.left}" y1="${PAD.top}" x2="${PAD.left}" y2="${PAD.top+cH}" stroke="#00ff4130" stroke-width="1"/>
+    <line x1="${PAD.left}" y1="${PAD.top+cH}" x2="${PAD.left+cW}" y2="${PAD.top+cH}" stroke="#00ff4130" stroke-width="1"/>
+    ${yGrid}${xLabels}
+    <line x1="${PAD.left}" y1="${minY.toFixed(1)}" x2="${PAD.left+cW}" y2="${minY.toFixed(1)}"
+      stroke="#00ff4155" stroke-width="1" stroke-dasharray="5,3"/>
+    <text x="${PAD.left+cW+2}" y="${(minY+3).toFixed(1)}"
+      font-family="Share Tech Mono,monospace" font-size="8" fill="#00ff4199">MIN</text>
+    ${curves}
+    <text x="${(PAD.left+cW/2).toFixed(0)}" y="${H-4}"
+      text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="9" fill="#00ff4133">
+      ${fuel} · HISTORIQUE 30J · ${series.length} STATIONS (€/L)
+    </text>
+  </svg>`;
+}
+
+// Fermer modal
+document.getElementById('chartModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('chartModal')) closeChartModal();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeChartModal();
+});
+</script>
+</body>
+</html>
